@@ -288,9 +288,7 @@ export default async function MemesPage({
     return (
         <div className="p-8 lg:p-10 xl:p-12">
 
-            {/* ======================================
-                HEADER
-            ====================================== */}
+            {/* HEADER */}
 
             <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
 
@@ -331,9 +329,7 @@ export default async function MemesPage({
             </div>
 
 
-            {/* ======================================
-                STATUS MESSAGES
-            ====================================== */}
+            {/* STATUS MESSAGES */}
 
             {query.created ===
                 "1" && (
@@ -366,9 +362,7 @@ export default async function MemesPage({
             )}
 
 
-            {/* ======================================
-                COUNT / SECTION TITLE
-            ====================================== */}
+            {/* SECTION TITLE */}
 
             <div className="mt-9 flex items-center justify-between">
 
@@ -392,9 +386,7 @@ export default async function MemesPage({
             </div>
 
 
-            {/* ======================================
-                MEME GRID
-            ====================================== */}
+            {/* MEME GRID */}
 
             {generations.length >
             0 ? (
@@ -454,8 +446,6 @@ export default async function MemesPage({
                                         </p>
 
 
-                                        {/* CREATOR + VOTES */}
-
                                         <div className="mt-5 flex items-end justify-between gap-4">
 
                                             <div className="min-w-0">
@@ -503,8 +493,6 @@ export default async function MemesPage({
 
                                         </div>
 
-
-                                        {/* SCORE */}
 
                                         {(stats.funny >
                                             0 ||
@@ -573,12 +561,7 @@ export default async function MemesPage({
             ) : (
                 <div className="mt-8 rounded-3xl border border-zinc-200 bg-white px-8 py-20 text-center">
 
-                    <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-zinc-100 text-2xl">
-                        +
-                    </div>
-
-
-                    <p className="mt-5 text-lg font-semibold text-zinc-900">
+                    <p className="text-lg font-semibold text-zinc-900">
                         No memes yet.
                     </p>
 
