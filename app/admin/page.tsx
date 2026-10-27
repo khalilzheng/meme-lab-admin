@@ -1,11 +1,9 @@
-/* eslint-disable @next/next/no-img-element */
+import Link from "next/link";
 
-import {
-    requireSuperadmin,
-} from "@/lib/requireSuperadmin";
+import { requireSuperadmin } from "@/lib/requireSuperadmin";
 
 
-type ProfileRow = {
+type Profile = {
     id: string;
     first_name: string | null;
     last_name: string | null;
@@ -13,54 +11,257 @@ type ProfileRow = {
 };
 
 
-type GenerationRow = {
+type Generation = {
     id: string;
-    created_at: string;
-    user_id: string;
-    image_url: string;
+    user_id: string | null;
+    image_url: string | null;
     caption: string | null;
+    created_at: string;
 };
 
 
-type VoteRow = {
+type Vote = {
+    user_id: string | null;
     generation_id: string;
     vote: number;
+    created_at: string;
 };
 
 
-function formatDate(
-    dateString: string
-) {
-    return new Intl.DateTimeFormat(
-        "en-US",
-        {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-        }
-    ).format(
-        new Date(
-            dateString
+type DailyActivity = {
+    key: string;
+    label: string;
+    generations: number;
+    votes: number;
+};
+
+
+type AdminPageProps = {
+    searchParams: Promise<{
+        days?: string | string[];
+    }>;
+};
+
+
+const AVAILABLE_RANGES = [
+    7,
+    14,
+    30,
+];
+
+
+function getSelectedDays(
+    value: string | string[] | undefined
+)
+{
+    const selectedValue =
+        Array.isArray(value)
+            ? value[0]
+            : value;
+
+
+    const parsedValue =
+        Number(selectedValue);
+
+
+    if (
+        AVAILABLE_RANGES.includes(
+            parsedValue
+        )
+    )
+    {
+        return parsedValue;
+    }
+
+
+    return 14;
+}
+
+
+function getNewYorkDateKey(
+    value: string | Date
+)
+{
+    const date =
+        typeof value === "string"
+            ? new Date(value)
+            : value;
+
+
+    const parts =
+        new Intl.DateTimeFormat(
+            "en-US",
+            {
+                timeZone: "America/New_York",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+            }
+        ).formatToParts(date);
+
+
+    const year =
+        parts.find(
+            (part) =>
+                part.type === "year"
+        )?.value || "";
+
+
+    const month =
+        parts.find(
+            (part) =>
+                part.type === "month"
+        )?.value || "";
+
+
+    const day =
+        parts.find(
+            (part) =>
+                part.type === "day"
+        )?.value || "";
+
+
+    return `${year}-${month}-${day}`;
+}
+
+
+function getNewYorkToday()
+{
+    const dateKey =
+        getNewYorkDateKey(
+            new Date()
+        );
+
+
+    const [
+        year,
+        month,
+        day,
+    ] =
+        dateKey
+            .split("-")
+            .map(Number);
+
+
+    return new Date(
+        Date.UTC(
+            year,
+            month - 1,
+            day,
+            12
         )
     );
 }
 
 
-export default async function AdminPage() {
-    const {
-        profile:
-            adminProfile,
+function getDateKeyFromCalendarDate(
+    date: Date
+)
+{
+    const year =
+        date.getUTCFullYear();
 
+
+    const month =
+        String(
+            date.getUTCMonth() + 1
+        ).padStart(
+            2,
+            "0"
+        );
+
+
+    const day =
+        String(
+            date.getUTCDate()
+        ).padStart(
+            2,
+            "0"
+        );
+
+
+    return `${year}-${month}-${day}`;
+}
+
+
+function formatShortDate(
+    date: Date
+)
+{
+    return new Intl.DateTimeFormat(
+        "en-US",
+        {
+            timeZone: "UTC",
+            month: "short",
+            day: "numeric",
+        }
+    ).format(date);
+}
+
+
+function formatFullDate(
+    value: string
+)
+{
+    return new Intl.DateTimeFormat(
+        "en-US",
+        {
+            timeZone: "America/New_York",
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+        }
+    ).format(
+        new Date(value)
+    );
+}
+
+
+function getProfileName(
+    profile: Profile | undefined
+)
+{
+    if (!profile)
+    {
+        return "Unknown user";
+    }
+
+
+    const fullName =
+        `${profile.first_name || ""} ${profile.last_name || ""}`
+            .trim();
+
+
+    if (fullName)
+    {
+        return fullName;
+    }
+
+
+    return "Unnamed user";
+}
+
+
+export default async function AdminPage({
+                                            searchParams,
+                                        }: AdminPageProps)
+{
+    const resolvedSearchParams =
+        await searchParams;
+
+
+    const dashboardDays =
+        getSelectedDays(
+            resolvedSearchParams.days
+        );
+
+
+    const {
+        profile,
         supabase,
     } =
         await requireSuperadmin();
 
-
-    /*
-     * =====================================================
-     * LOAD ADMIN DATA
-     * =====================================================
-     */
 
     const [
         profilesResult,
@@ -69,41 +270,55 @@ export default async function AdminPage() {
     ] =
         await Promise.all([
             supabase
-                .from(
-                    "profiles"
-                )
+                .from("profiles")
                 .select(
-                    "id, first_name, last_name, avatar_url"
+                    `
+                    id,
+                    first_name,
+                    last_name,
+                    avatar_url
+                    `
                 ),
 
             supabase
-                .from(
-                    "generations"
-                )
+                .from("generations")
                 .select(
-                    "id, created_at, user_id, image_url, caption"
+                    `
+                    id,
+                    user_id,
+                    image_url,
+                    caption,
+                    created_at
+                    `
                 )
                 .order(
                     "created_at",
                     {
-                        ascending:
-                            false,
+                        ascending: false,
                     }
                 ),
 
             supabase
-                .from(
-                    "votes"
-                )
+                .from("votes")
                 .select(
-                    "generation_id, vote"
+                    `
+                    user_id,
+                    generation_id,
+                    vote,
+                    created_at
+                    `
+                )
+                .order(
+                    "created_at",
+                    {
+                        ascending: false,
+                    }
                 ),
         ]);
 
 
-    if (
-        profilesResult.error
-    ) {
+    if (profilesResult.error)
+    {
         console.error(
             "Could not load profiles:",
             profilesResult.error
@@ -111,9 +326,8 @@ export default async function AdminPage() {
     }
 
 
-    if (
-        generationsResult.error
-    ) {
+    if (generationsResult.error)
+    {
         console.error(
             "Could not load generations:",
             generationsResult.error
@@ -121,9 +335,8 @@ export default async function AdminPage() {
     }
 
 
-    if (
-        votesResult.error
-    ) {
+    if (votesResult.error)
+    {
         console.error(
             "Could not load votes:",
             votesResult.error
@@ -131,32 +344,32 @@ export default async function AdminPage() {
     }
 
 
-    const profiles =
-        (
-            profilesResult.data ??
-            []
-        ) as ProfileRow[];
+    const profiles: Profile[] =
+        profilesResult.data || [];
 
 
-    const generations =
-        (
-            generationsResult.data ??
-            []
-        ) as GenerationRow[];
+    const generations: Generation[] =
+        generationsResult.data || [];
 
 
-    const votes =
-        (
-            votesResult.data ??
-            []
-        ) as VoteRow[];
+    const votes: Vote[] =
+        votesResult.data || [];
 
 
-    /*
-     * =====================================================
-     * BASIC STATISTICS
-     * =====================================================
-     */
+    const profileMap =
+        new Map(
+            profiles.map(
+                (currentProfile) => [
+                    currentProfile.id,
+                    currentProfile,
+                ]
+            )
+        );
+
+
+    // ---------------------------------------------------------
+    // All-time statistics
+    // ---------------------------------------------------------
 
     const totalUsers =
         profiles.length;
@@ -173,192 +386,300 @@ export default async function AdminPage() {
     const funnyVotes =
         votes.filter(
             (vote) =>
-                vote.vote ===
-                1
+                vote.vote === 1
         ).length;
 
 
     const notFunnyVotes =
         votes.filter(
             (vote) =>
-                vote.vote ===
-                -1
+                vote.vote === -1
         ).length;
 
 
-    const funnyPercentage =
-        totalVotes > 0
-            ? Math.round(
-                (
-                    funnyVotes /
-                    totalVotes
-                ) *
-                100
-            )
-            : 0;
-
-
-    const communityScore =
+    const allTimeCommunityScore =
         funnyVotes -
         notFunnyVotes;
 
 
-    /*
-     * =====================================================
-     * PROFILE LOOKUP
-     * =====================================================
-     */
+    // ---------------------------------------------------------
+    // Build selected date range
+    // ---------------------------------------------------------
 
-    const profileMap =
+    const today =
+        getNewYorkToday();
+
+
+    const dailyActivity: DailyActivity[] =
+        [];
+
+
+    for (
+        let dayOffset =
+            dashboardDays - 1;
+
+        dayOffset >= 0;
+
+        dayOffset--
+    )
+    {
+        const currentDate =
+            new Date(today);
+
+
+        currentDate.setUTCDate(
+            today.getUTCDate() -
+            dayOffset
+        );
+
+
+        dailyActivity.push({
+            key:
+                getDateKeyFromCalendarDate(
+                    currentDate
+                ),
+
+            label:
+                formatShortDate(
+                    currentDate
+                ),
+
+            generations: 0,
+
+            votes: 0,
+        });
+    }
+
+
+    const activityMap =
         new Map(
-            profiles.map(
-                (
-                    profile
-                ) => [
-                    profile.id,
-                    profile,
+            dailyActivity.map(
+                (day) => [
+                    day.key,
+                    day,
                 ]
             )
         );
 
 
-    function getCreatorName(
-        userId: string
-    ) {
-        const creator =
-            profileMap.get(
-                userId
+    // ---------------------------------------------------------
+    // Count generations in selected range
+    // ---------------------------------------------------------
+
+    for (
+        const generation
+        of generations
+        )
+    {
+        const dateKey =
+            getNewYorkDateKey(
+                generation.created_at
             );
 
 
-        if (
-            !creator
-        ) {
-            return "Unknown creator";
+        const day =
+            activityMap.get(
+                dateKey
+            );
+
+
+        if (day)
+        {
+            day.generations++;
         }
-
-
-        const fullName =
-            [
-                creator.first_name,
-                creator.last_name,
-            ]
-                .filter(
-                    Boolean
-                )
-                .join(" ")
-                .trim();
-
-
-        return (
-            fullName ||
-            "Campus creator"
-        );
     }
 
 
-    /*
-     * =====================================================
-     * VOTES PER MEME
-     * =====================================================
-     */
-
-    const voteStats =
-        new Map<
-            string,
-            {
-                funny: number;
-                notFunny: number;
-                score: number;
-            }
-        >();
-
+    // ---------------------------------------------------------
+    // Count votes in selected range
+    // ---------------------------------------------------------
 
     for (
-        const vote of votes
-        ) {
-        const current =
-            voteStats.get(
-                vote.generation_id
-            ) ?? {
-                funny: 0,
-                notFunny: 0,
-                score: 0,
-            };
+        const vote
+        of votes
+        )
+    {
+        const dateKey =
+            getNewYorkDateKey(
+                vote.created_at
+            );
 
 
-        if (
-            vote.vote === 1
-        ) {
-            current.funny +=
-                1;
+        const day =
+            activityMap.get(
+                dateKey
+            );
+
+
+        if (day)
+        {
+            day.votes++;
         }
-
-
-        if (
-            vote.vote ===
-            -1
-        ) {
-            current.notFunny +=
-                1;
-        }
-
-
-        current.score =
-            current.funny -
-            current.notFunny;
-
-
-        voteStats.set(
-            vote.generation_id,
-            current
-        );
     }
 
 
-    /*
-     * =====================================================
-     * TOP MEMES
-     * =====================================================
-     */
+    const recentGenerationCount =
+        dailyActivity.reduce(
+            (
+                total,
+                day
+            ) =>
+                total +
+                day.generations,
+            0
+        );
+
+
+    const recentVoteCount =
+        dailyActivity.reduce(
+            (
+                total,
+                day
+            ) =>
+                total +
+                day.votes,
+            0
+        );
+
+
+    const recentDateKeys =
+        new Set(
+            dailyActivity.map(
+                (day) =>
+                    day.key
+            )
+        );
+
+
+    const recentVotes =
+        votes.filter(
+            (vote) =>
+                recentDateKeys.has(
+                    getNewYorkDateKey(
+                        vote.created_at
+                    )
+                )
+        );
+
+
+    const recentFunnyVotes =
+        recentVotes.filter(
+            (vote) =>
+                vote.vote === 1
+        ).length;
+
+
+    const recentNotFunnyVotes =
+        recentVotes.filter(
+            (vote) =>
+                vote.vote === -1
+        ).length;
+
+
+    const recentCommunityScore =
+        recentFunnyVotes -
+        recentNotFunnyVotes;
+
+
+    const recentFunnyPercentage =
+        recentVotes.length > 0
+            ? Math.round(
+                (
+                    recentFunnyVotes /
+                    recentVotes.length
+                ) * 100
+            )
+            : 0;
+
+
+    // ---------------------------------------------------------
+    // Chart scaling
+    // ---------------------------------------------------------
+
+    const maximumDailyActivity =
+        Math.max(
+            1,
+            ...dailyActivity.map(
+                (day) =>
+                    Math.max(
+                        day.generations,
+                        day.votes
+                    )
+            )
+        );
+
+
+    // ---------------------------------------------------------
+    // Find top performing memes
+    // ---------------------------------------------------------
+
+    const memePerformance =
+        generations.map(
+            (generation) =>
+            {
+                const generationVotes =
+                    votes.filter(
+                        (vote) =>
+                            vote.generation_id ===
+                            generation.id
+                    );
+
+
+                const positiveVotes =
+                    generationVotes.filter(
+                        (vote) =>
+                            vote.vote === 1
+                    ).length;
+
+
+                const negativeVotes =
+                    generationVotes.filter(
+                        (vote) =>
+                            vote.vote === -1
+                    ).length;
+
+
+                return {
+                    generation,
+
+                    positiveVotes,
+
+                    negativeVotes,
+
+                    totalVotes:
+                    generationVotes.length,
+
+                    score:
+                        positiveVotes -
+                        negativeVotes,
+                };
+            }
+        );
+
 
     const topMemes =
-        [...generations]
-            .map(
-                (
-                    generation
-                ) => ({
-                    ...generation,
-
-                    stats:
-                        voteStats.get(
-                            generation.id
-                        ) ?? {
-                            funny: 0,
-                            notFunny: 0,
-                            score: 0,
-                        },
-                })
-            )
+        [...memePerformance]
             .sort(
                 (
-                    a,
-                    b
-                ) => {
+                    firstMeme,
+                    secondMeme
+                ) =>
+                {
                     if (
-                        b.stats.score !==
-                        a.stats.score
-                    ) {
+                        secondMeme.score !==
+                        firstMeme.score
+                    )
+                    {
                         return (
-                            b.stats.score -
-                            a.stats.score
+                            secondMeme.score -
+                            firstMeme.score
                         );
                     }
 
 
                     return (
-                        b.stats.funny -
-                        a.stats.funny
+                        secondMeme.totalVotes -
+                        firstMeme.totalVotes
                     );
                 }
             )
@@ -368,521 +689,856 @@ export default async function AdminPage() {
             );
 
 
-    /*
-     * =====================================================
-     * MOST ACTIVE CREATOR
-     * =====================================================
-     */
+    // ---------------------------------------------------------
+    // Find most active creator
+    // ---------------------------------------------------------
 
-    const creatorPostCounts =
-        new Map<
-            string,
-            number
-        >();
+    const creatorCounts =
+        new Map<string, number>();
 
 
     for (
-        const generation of generations
-        ) {
-        creatorPostCounts.set(
-            generation.user_id,
+        const generation
+        of generations
+        )
+    {
+        if (
+            !generation.user_id
+        )
+        {
+            continue;
+        }
 
+
+        creatorCounts.set(
+            generation.user_id,
             (
-                creatorPostCounts.get(
+                creatorCounts.get(
                     generation.user_id
-                ) ??
-                0
+                ) || 0
             ) + 1
         );
     }
 
 
-    const mostActiveEntry =
-        [
-            ...creatorPostCounts.entries(),
-        ].sort(
-            (
-                a,
-                b
-            ) =>
-                b[1] -
-                a[1]
-        )[0];
+    let mostActiveCreatorId:
+        string | null =
+        null;
+
+
+    let mostActiveCreatorCount =
+        0;
+
+
+    for (
+        const [
+            creatorId,
+            creatorCount,
+        ]
+        of creatorCounts
+        )
+    {
+        if (
+            creatorCount >
+            mostActiveCreatorCount
+        )
+        {
+            mostActiveCreatorId =
+                creatorId;
+
+            mostActiveCreatorCount =
+                creatorCount;
+        }
+    }
 
 
     const mostActiveCreator =
-        mostActiveEntry
-            ? {
-                name:
-                    getCreatorName(
-                        mostActiveEntry[0]
-                    ),
-
-                posts:
-                    mostActiveEntry[1],
-            }
-            : null;
+        mostActiveCreatorId
+            ? profileMap.get(
+                mostActiveCreatorId
+            )
+            : undefined;
 
 
-    /*
-     * =====================================================
-     * RECENT MEMES
-     * =====================================================
-     */
+    // ---------------------------------------------------------
+    // Recent generations
+    // ---------------------------------------------------------
 
-    const recentMemes =
+    const recentGenerations =
         generations.slice(
             0,
             5
         );
 
 
-    const adminName =
-        adminProfile.first_name ||
+    // ---------------------------------------------------------
+    // Greeting
+    // ---------------------------------------------------------
+
+    const now =
+        new Date();
+
+
+    const currentHour =
+        Number(
+            new Intl.DateTimeFormat(
+                "en-US",
+                {
+                    timeZone:
+                        "America/New_York",
+
+                    hour:
+                        "2-digit",
+
+                    hourCycle:
+                        "h23",
+                }
+            ).format(
+                now
+            )
+        );
+
+
+    let greeting =
+        "Good evening";
+
+
+    if (
+        currentHour < 12
+    )
+    {
+        greeting =
+            "Good morning";
+    }
+    else if (
+        currentHour < 17
+    )
+    {
+        greeting =
+            "Good afternoon";
+    }
+
+
+    const firstName =
+        profile.first_name ||
         "Admin";
+
+
+    const rangeStart =
+        dailyActivity[0]
+            ?.label || "";
+
+
+    const rangeEnd =
+        dailyActivity[
+        dailyActivity.length - 1
+            ]?.label || "";
 
 
     return (
         <div className="p-8 lg:p-10 xl:p-12">
 
-            {/* HEADER */}
+            <div className="mx-auto max-w-7xl">
 
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                {/* HEADER */}
 
-                <div>
+                <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
 
-                    <p className="text-[11px] font-semibold tracking-[0.24em] text-zinc-500">
-                        MEME LAB ADMIN
-                    </p>
+                    <div>
 
-
-                    <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em] lg:text-5xl">
-                        Good morning,{" "}
-                        {adminName}.
-                    </h1>
+                        <p className="text-[10px] font-semibold tracking-[0.24em] text-zinc-500">
+                            MEME LAB ADMIN
+                        </p>
 
 
-                    <p className="mt-3 text-sm text-zinc-500">
-                        Here&apos;s what&apos;s happening across Meme Lab.
-                    </p>
-
-                </div>
+                        <h1 className="mt-3 text-4xl font-bold tracking-tight text-black lg:text-5xl">
+                            {greeting}, {firstName}.
+                        </h1>
 
 
-                <div className="rounded-full border border-zinc-200 bg-white px-5 py-2.5 text-xs font-medium text-zinc-500">
-                    Live database overview
-                </div>
+                        <p className="mt-3 text-sm text-zinc-500">
+                            Here&apos;s what&apos;s happening across Meme Lab.
+                        </p>
 
-            </div>
-
-
-            {/* PRIMARY STATS */}
-
-            <section className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-
-                <div className="rounded-3xl border border-zinc-200 bg-white p-6">
-
-                    <p className="text-[11px] font-semibold tracking-[0.14em] text-zinc-500">
-                        USERS
-                    </p>
-
-                    <p className="mt-6 text-5xl font-semibold tracking-[-0.05em]">
-                        {totalUsers}
-                    </p>
-
-                    <p className="mt-3 text-sm text-zinc-400">
-                        Registered profiles
-                    </p>
-
-                </div>
+                    </div>
 
 
-                <div className="rounded-3xl border border-zinc-200 bg-white p-6">
+                    {/* TIME RANGE SELECTOR */}
 
-                    <p className="text-[11px] font-semibold tracking-[0.14em] text-zinc-500">
-                        MEMES
-                    </p>
+                    <div className="flex flex-col items-start gap-2 lg:items-end">
 
-                    <p className="mt-6 text-5xl font-semibold tracking-[-0.05em]">
-                        {totalMemes}
-                    </p>
-
-                    <p className="mt-3 text-sm text-zinc-400">
-                        AI-generated posts
-                    </p>
-
-                </div>
+                        <p className="text-[10px] font-semibold tracking-[0.18em] text-zinc-400">
+                            TIME RANGE
+                        </p>
 
 
-                <div className="rounded-3xl border border-zinc-200 bg-white p-6">
+                        <div className="flex items-center rounded-full border border-zinc-200 bg-white p-1">
 
-                    <p className="text-[11px] font-semibold tracking-[0.14em] text-zinc-500">
-                        VOTES
-                    </p>
+                            {AVAILABLE_RANGES.map(
+                                (range) => (
 
-                    <p className="mt-6 text-5xl font-semibold tracking-[-0.05em]">
-                        {totalVotes}
-                    </p>
+                                    <Link
+                                        key={
+                                            range
+                                        }
+                                        href={
+                                            `/admin?days=${range}`
+                                        }
+                                        className={`rounded-full px-5 py-2 text-xs font-semibold transition ${
+                                            dashboardDays ===
+                                            range
+                                                ? "bg-black text-white"
+                                                : "text-zinc-500 hover:bg-zinc-100 hover:text-black"
+                                        }`}
+                                    >
+                                        {range}D
+                                    </Link>
 
-                    <p className="mt-3 text-sm text-zinc-400">
-                        Community reactions
-                    </p>
+                                )
+                            )}
+
+                        </div>
+
+
+                        <p className="text-[11px] text-zinc-400">
+                            {rangeStart} – {rangeEnd}
+                        </p>
+
+                    </div>
 
                 </div>
 
 
-                <div className="rounded-3xl bg-black p-6 text-white">
+                {/* SUMMARY CARDS */}
 
-                    <p className="text-[11px] font-semibold tracking-[0.14em] text-zinc-500">
-                        COMMUNITY SCORE
-                    </p>
+                <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
 
-                    <p className="mt-6 text-5xl font-semibold tracking-[-0.05em]">
-                        {communityScore >
-                        0
-                            ? "+"
-                            : ""}
-                        {
-                            communityScore
-                        }
-                    </p>
+                    <div className="rounded-3xl border border-zinc-200 bg-white p-6">
 
-                    <p className="mt-3 text-sm text-zinc-500">
-                        Funny minus Not Funny
-                    </p>
+                        <p className="text-[10px] font-semibold tracking-[0.18em] text-zinc-500">
+                            USERS
+                        </p>
+
+
+                        <p className="mt-4 text-4xl font-bold tracking-tight">
+                            {totalUsers}
+                        </p>
+
+
+                        <p className="mt-3 text-sm text-zinc-500">
+                            Registered profiles · All time
+                        </p>
+
+                    </div>
+
+
+                    <div className="rounded-3xl border border-zinc-200 bg-white p-6">
+
+                        <p className="text-[10px] font-semibold tracking-[0.18em] text-zinc-500">
+                            MEMES
+                        </p>
+
+
+                        <p className="mt-4 text-4xl font-bold tracking-tight">
+                            {totalMemes}
+                        </p>
+
+
+                        <p className="mt-3 text-sm text-zinc-500">
+                            {recentGenerationCount} generated in past {dashboardDays} days
+                        </p>
+
+                    </div>
+
+
+                    <div className="rounded-3xl border border-zinc-200 bg-white p-6">
+
+                        <p className="text-[10px] font-semibold tracking-[0.18em] text-zinc-500">
+                            VOTES
+                        </p>
+
+
+                        <p className="mt-4 text-4xl font-bold tracking-tight">
+                            {totalVotes}
+                        </p>
+
+
+                        <p className="mt-3 text-sm text-zinc-500">
+                            {recentVoteCount} cast in past {dashboardDays} days
+                        </p>
+
+                    </div>
+
+
+                    <div className="rounded-3xl bg-black p-6 text-white">
+
+                        <p className="text-[10px] font-semibold tracking-[0.18em] text-zinc-500">
+                            RECENT SCORE
+                        </p>
+
+
+                        <p className="mt-4 text-4xl font-bold tracking-tight">
+                            {recentCommunityScore >= 0
+                                ? "+"
+                                : ""}
+                            {recentCommunityScore}
+                        </p>
+
+
+                        <p className="mt-3 text-sm text-zinc-400">
+                            Past {dashboardDays} days · {recentFunnyPercentage}% Funny
+                        </p>
+
+                    </div>
 
                 </div>
 
-            </section>
 
+                {/* ACTIVITY TREND */}
 
-            {/* SECONDARY STATISTICS */}
+                <div className="mt-5 rounded-3xl border border-zinc-200 bg-white p-6">
 
-            <section className="mt-5 grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
-
-                {/* SENTIMENT */}
-
-                <div className="rounded-3xl border border-zinc-200 bg-white p-7">
-
-                    <div className="flex items-start justify-between">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
 
                         <div>
 
-                            <p className="text-[11px] font-semibold tracking-[0.18em] text-zinc-500">
-                                COMMUNITY SENTIMENT
+                            <p className="text-[10px] font-semibold tracking-[0.2em] text-zinc-500">
+                                ACTIVITY TREND
                             </p>
 
-                            <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-                                {
-                                    funnyPercentage
-                                }
-                                % Funny
+
+                            <h2 className="mt-2 text-2xl font-bold tracking-tight text-black">
+                                Past {dashboardDays} days
                             </h2>
-
-                        </div>
-
-
-                        <div className="rounded-full bg-zinc-100 px-4 py-2 text-xs font-medium">
-                            {
-                                totalVotes
-                            }{" "}
-                            total votes
-                        </div>
-
-                    </div>
-
-
-                    <div className="mt-8">
-
-                        <div className="h-4 overflow-hidden rounded-full bg-zinc-100">
-
-                            <div
-                                className="h-full rounded-full bg-black transition-all"
-                                style={{
-                                    width:
-                                        `${funnyPercentage}%`,
-                                }}
-                            />
-
-                        </div>
-
-
-                        <div className="mt-5 flex justify-between">
-
-                            <div>
-
-                                <p className="text-xs text-zinc-400">
-                                    FUNNY
-                                </p>
-
-                                <p className="mt-1 text-2xl font-semibold">
-                                    {
-                                        funnyVotes
-                                    }
-                                </p>
-
-                            </div>
-
-
-                            <div className="text-right">
-
-                                <p className="text-xs text-zinc-400">
-                                    NOT FUNNY
-                                </p>
-
-                                <p className="mt-1 text-2xl font-semibold">
-                                    {
-                                        notFunnyVotes
-                                    }
-                                </p>
-
-                            </div>
-
-                        </div>
-
-                    </div>
-
-                </div>
-
-
-                {/* ACTIVE CREATOR */}
-
-                <div className="rounded-3xl border border-zinc-200 bg-white p-7">
-
-                    <p className="text-[11px] font-semibold tracking-[0.18em] text-zinc-500">
-                        MOST ACTIVE CREATOR
-                    </p>
-
-
-                    {mostActiveCreator ? (
-                        <>
-
-                            <div className="mt-8 flex h-14 w-14 items-center justify-center rounded-full bg-black text-xl font-semibold text-white">
-                                {mostActiveCreator.name
-                                    .charAt(
-                                        0
-                                    )
-                                    .toUpperCase()}
-                            </div>
-
-
-                            <p className="mt-5 text-2xl font-semibold tracking-tight">
-                                {
-                                    mostActiveCreator.name
-                                }
-                            </p>
 
 
                             <p className="mt-2 text-sm text-zinc-500">
-                                {
-                                    mostActiveCreator.posts
-                                }{" "}
-                                meme
-                                {mostActiveCreator.posts ===
-                                1
-                                    ? ""
-                                    : "s"}{" "}
-                                published
+                                Daily generations and community votes.
                             </p>
 
-                        </>
-                    ) : (
-                        <p className="mt-8 text-sm text-zinc-400">
-                            No creator activity yet.
-                        </p>
-                    )}
-
-                </div>
-
-            </section>
+                        </div>
 
 
-            {/* TOP MEMES */}
+                        <div className="flex items-center gap-5 text-xs text-zinc-600">
 
-            <section className="mt-5 rounded-3xl border border-zinc-200 bg-white p-7">
+                            <div className="flex items-center gap-2">
 
-                <div>
+                                <span className="h-3 w-3 rounded-sm bg-black" />
 
-                    <p className="text-[11px] font-semibold tracking-[0.18em] text-zinc-500">
-                        TOP CONTENT
-                    </p>
+                                <span>
+                                    Memes
+                                </span>
 
-                    <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-                        Best performing memes
-                    </h2>
-
-                </div>
+                            </div>
 
 
-                {topMemes.length >
-                0 ? (
-                    <div className="mt-7 grid gap-5 md:grid-cols-3">
+                            <div className="flex items-center gap-2">
 
-                        {topMemes.map(
-                            (
-                                meme,
-                                index
-                            ) => (
-                                <article
-                                    key={
-                                        meme.id
+                                <span className="h-3 w-3 rounded-sm bg-zinc-300" />
+
+                                <span>
+                                    Votes
+                                </span>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+
+                    <div className="mt-8 overflow-x-auto">
+
+                        <div
+                            className={
+                                dashboardDays === 30
+                                    ? "min-w-[1000px]"
+                                    : "min-w-[700px]"
+                            }
+                        >
+
+                            <div className="flex h-64 items-end gap-2 border-b border-zinc-200 px-1">
+
+                                {dailyActivity.map(
+                                    (
+                                        day,
+                                        index
+                                    ) =>
+                                    {
+                                        const generationHeight =
+                                            day.generations > 0
+                                                ? Math.max(
+                                                    7,
+                                                    (
+                                                        day.generations /
+                                                        maximumDailyActivity
+                                                    ) * 100
+                                                )
+                                                : 0;
+
+
+                                        const voteHeight =
+                                            day.votes > 0
+                                                ? Math.max(
+                                                    7,
+                                                    (
+                                                        day.votes /
+                                                        maximumDailyActivity
+                                                    ) * 100
+                                                )
+                                                : 0;
+
+
+                                        const showDateLabel =
+                                            dashboardDays <= 14 ||
+                                            index % 3 === 0 ||
+                                            index ===
+                                            dailyActivity.length - 1;
+
+
+                                        return (
+                                            <div
+                                                key={
+                                                    day.key
+                                                }
+                                                className="flex h-full min-w-0 flex-1 flex-col justify-end"
+                                            >
+
+                                                <div className="flex h-[210px] items-end justify-center gap-1">
+
+                                                    <div
+                                                        title={`${day.label}: ${day.generations} memes`}
+                                                        className="w-[38%] rounded-t-md bg-black transition-all"
+                                                        style={{
+                                                            height:
+                                                                `${generationHeight}%`,
+                                                        }}
+                                                    />
+
+
+                                                    <div
+                                                        title={`${day.label}: ${day.votes} votes`}
+                                                        className="w-[38%] rounded-t-md bg-zinc-300 transition-all"
+                                                        style={{
+                                                            height:
+                                                                `${voteHeight}%`,
+                                                        }}
+                                                    />
+
+                                                </div>
+
+
+                                                <p className="mt-3 min-h-[14px] truncate text-center text-[9px] font-medium text-zinc-500">
+
+                                                    {showDateLabel
+                                                        ? day.label
+                                                        : ""}
+
+                                                </p>
+
+                                            </div>
+                                        );
                                     }
-                                    className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50"
-                                >
+                                )}
 
-                                    <div className="relative aspect-[4/3] overflow-hidden bg-zinc-200">
+                            </div>
 
-                                        <img
-                                            src={
-                                                meme.image_url
+                        </div>
+
+                    </div>
+
+
+                    <div className="mt-6 grid gap-4 md:grid-cols-3">
+
+                        <div className="rounded-2xl bg-zinc-50 p-4">
+
+                            <p className="text-xs text-zinc-500">
+                                Memes generated
+                            </p>
+
+
+                            <p className="mt-1 text-2xl font-bold">
+                                {recentGenerationCount}
+                            </p>
+
+
+                            <p className="mt-1 text-[11px] text-zinc-400">
+                                Past {dashboardDays} days
+                            </p>
+
+                        </div>
+
+
+                        <div className="rounded-2xl bg-zinc-50 p-4">
+
+                            <p className="text-xs text-zinc-500">
+                                Votes cast
+                            </p>
+
+
+                            <p className="mt-1 text-2xl font-bold">
+                                {recentVoteCount}
+                            </p>
+
+
+                            <p className="mt-1 text-[11px] text-zinc-400">
+                                Past {dashboardDays} days
+                            </p>
+
+                        </div>
+
+
+                        <div className="rounded-2xl bg-zinc-50 p-4">
+
+                            <p className="text-xs text-zinc-500">
+                                Funny sentiment
+                            </p>
+
+
+                            <p className="mt-1 text-2xl font-bold">
+                                {recentFunnyPercentage}%
+                            </p>
+
+
+                            <p className="mt-1 text-[11px] text-zinc-400">
+                                {recentFunnyVotes} funny · {recentNotFunnyVotes} not funny
+                            </p>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                {/* TOP CONTENT + CREATOR */}
+
+                <div className="mt-5 grid gap-5 xl:grid-cols-[2fr_1fr]">
+
+                    <div className="rounded-3xl border border-zinc-200 bg-white p-6">
+
+                        <div>
+
+                            <p className="text-[10px] font-semibold tracking-[0.2em] text-zinc-500">
+                                TOP CONTENT
+                            </p>
+
+
+                            <h2 className="mt-2 text-2xl font-bold tracking-tight">
+                                Best performing memes
+                            </h2>
+
+
+                            <p className="mt-2 text-xs text-zinc-500">
+                                Ranked by all-time community score.
+                            </p>
+
+                        </div>
+
+
+                        {topMemes.length === 0 ? (
+
+                            <div className="mt-8 rounded-2xl bg-zinc-50 p-8 text-center text-sm text-zinc-500">
+                                No meme data yet.
+                            </div>
+
+                        ) : (
+
+                            <div className="mt-7 grid gap-4 md:grid-cols-3">
+
+                                {topMemes.map(
+                                    (
+                                        meme,
+                                        index
+                                    ) => (
+
+                                        <div
+                                            key={
+                                                meme
+                                                    .generation
+                                                    .id
                                             }
-                                            alt=""
-                                            className="h-full w-full object-cover"
-                                        />
+                                            className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50"
+                                        >
+
+                                            <div className="relative aspect-[4/3] overflow-hidden bg-zinc-200">
+
+                                                {meme.generation.image_url ? (
+
+                                                    <img
+                                                        src={
+                                                            meme
+                                                                .generation
+                                                                .image_url
+                                                        }
+                                                        alt={
+                                                            meme
+                                                                .generation
+                                                                .caption ||
+                                                            "Meme"
+                                                        }
+                                                        className="h-full w-full object-cover"
+                                                    />
+
+                                                ) : (
+
+                                                    <div className="grid h-full place-items-center text-sm text-zinc-500">
+                                                        No image
+                                                    </div>
+
+                                                )}
 
 
-                                        <div className="absolute left-3 top-3 rounded-full bg-black px-3 py-1 text-xs font-semibold text-white">
-                                            #
-                                            {index +
-                                                1}
+                                                <div className="absolute left-3 top-3 rounded-full bg-black px-3 py-1 text-xs font-bold text-white">
+                                                    #{index + 1}
+                                                </div>
+
+                                            </div>
+
+
+                                            <div className="p-4">
+
+                                                <p className="line-clamp-2 min-h-[40px] text-sm font-semibold text-black">
+                                                    {meme
+                                                            .generation
+                                                            .caption ||
+                                                        "Untitled meme"}
+                                                </p>
+
+
+                                                <p className="mt-4 text-xs text-zinc-500">
+                                                    {getProfileName(
+                                                        meme
+                                                            .generation
+                                                            .user_id
+                                                            ? profileMap.get(
+                                                                meme
+                                                                    .generation
+                                                                    .user_id
+                                                            )
+                                                            : undefined
+                                                    )}
+                                                </p>
+
+
+                                                <div className="mt-4 flex items-center justify-between border-t border-zinc-200 pt-3 text-xs">
+
+                                                    <div className="flex gap-3">
+
+                                                        <span>
+                                                            ↑ {meme.positiveVotes}
+                                                        </span>
+
+
+                                                        <span>
+                                                            ↓ {meme.negativeVotes}
+                                                        </span>
+
+                                                    </div>
+
+
+                                                    <span className="font-semibold">
+                                                        Score {meme.score}
+                                                    </span>
+
+                                                </div>
+
+                                            </div>
+
                                         </div>
 
-                                    </div>
+                                    )
+                                )}
 
+                            </div>
 
-                                    <div className="p-5">
-
-                                        <p className="line-clamp-2 min-h-10 text-sm font-semibold leading-5">
-                                            {meme.caption ||
-                                                "Untitled meme"}
-                                        </p>
-
-
-                                        <p className="mt-3 text-xs text-zinc-400">
-                                            {getCreatorName(
-                                                meme.user_id
-                                            )}
-                                        </p>
-
-
-                                        <div className="mt-5 flex items-center gap-4 border-t border-zinc-200 pt-4 text-xs">
-
-                                            <span>
-                                                ↑{" "}
-                                                {
-                                                    meme
-                                                        .stats
-                                                        .funny
-                                                }
-                                            </span>
-
-                                            <span>
-                                                ↓{" "}
-                                                {
-                                                    meme
-                                                        .stats
-                                                        .notFunny
-                                                }
-                                            </span>
-
-                                            <span className="ml-auto font-semibold">
-                                                Score{" "}
-                                                {
-                                                    meme
-                                                        .stats
-                                                        .score
-                                                }
-                                            </span>
-
-                                        </div>
-
-                                    </div>
-
-                                </article>
-                            )
                         )}
 
                     </div>
-                ) : (
-                    <p className="mt-7 text-sm text-zinc-400">
-                        No memes yet.
-                    </p>
-                )}
-
-            </section>
 
 
-            {/* RECENT ACTIVITY */}
+                    <div className="rounded-3xl border border-zinc-200 bg-white p-6">
 
-            <section className="mt-5 rounded-3xl border border-zinc-200 bg-white p-7">
-
-                <p className="text-[11px] font-semibold tracking-[0.18em] text-zinc-500">
-                    RECENT ACTIVITY
-                </p>
-
-                <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-                    Latest generations
-                </h2>
+                        <p className="text-[10px] font-semibold tracking-[0.2em] text-zinc-500">
+                            MOST ACTIVE CREATOR
+                        </p>
 
 
-                <div className="mt-6 divide-y divide-zinc-100">
+                        {mostActiveCreator ? (
 
-                    {recentMemes.length >
-                    0 ? (
-                        recentMemes.map(
-                            (
-                                meme
-                            ) => (
-                                <div
-                                    key={
-                                        meme.id
-                                    }
-                                    className="flex items-center gap-4 py-4 first:pt-0 last:pb-0"
-                                >
+                            <div className="mt-7">
 
-                                    <img
-                                        src={
-                                            meme.image_url
+                                <div className="grid h-12 w-12 place-items-center rounded-full bg-black text-base font-semibold text-white">
+                                    {(
+                                        mostActiveCreator
+                                            .first_name ||
+                                        "U"
+                                    )
+                                        .charAt(0)
+                                        .toUpperCase()}
+                                </div>
+
+
+                                <h2 className="mt-5 text-2xl font-bold">
+                                    {getProfileName(
+                                        mostActiveCreator
+                                    )}
+                                </h2>
+
+
+                                <p className="mt-2 text-sm text-zinc-500">
+                                    {mostActiveCreatorCount} memes published
+                                </p>
+
+                            </div>
+
+                        ) : (
+
+                            <p className="mt-6 text-sm text-zinc-500">
+                                No creator activity yet.
+                            </p>
+
+                        )}
+
+                    </div>
+
+                </div>
+
+
+                {/* RECENT ACTIVITY */}
+
+                <div className="mt-5 rounded-3xl border border-zinc-200 bg-white">
+
+                    <div className="p-6">
+
+                        <p className="text-[10px] font-semibold tracking-[0.2em] text-zinc-500">
+                            RECENT ACTIVITY
+                        </p>
+
+
+                        <h2 className="mt-2 text-2xl font-bold tracking-tight">
+                            Latest generations
+                        </h2>
+
+                    </div>
+
+
+                    <div className="border-t border-zinc-100">
+
+                        {recentGenerations.length === 0 ? (
+
+                            <div className="p-8 text-sm text-zinc-500">
+                                No generations yet.
+                            </div>
+
+                        ) : (
+
+                            recentGenerations.map(
+                                (
+                                    generation,
+                                    index
+                                ) => (
+
+                                    <div
+                                        key={
+                                            generation.id
                                         }
-                                        alt=""
-                                        className="h-14 w-14 rounded-xl bg-zinc-100 object-cover"
-                                    />
+                                        className={`flex items-center gap-4 px-6 py-4 ${
+                                            index !==
+                                            recentGenerations.length -
+                                            1
+                                                ? "border-b border-zinc-100"
+                                                : ""
+                                        }`}
+                                    >
+
+                                        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-zinc-200">
+
+                                            {generation.image_url ? (
+
+                                                <img
+                                                    src={
+                                                        generation.image_url
+                                                    }
+                                                    alt={
+                                                        generation.caption ||
+                                                        "Generation"
+                                                    }
+                                                    className="h-full w-full object-cover"
+                                                />
+
+                                            ) : null}
+
+                                        </div>
 
 
-                                    <div className="min-w-0 flex-1">
+                                        <div className="min-w-0 flex-1">
 
-                                        <p className="truncate text-sm font-semibold">
-                                            {meme.caption ||
-                                                "Untitled meme"}
-                                        </p>
+                                            <p className="truncate text-sm font-semibold text-black">
+                                                {generation.caption ||
+                                                    "Untitled generation"}
+                                            </p>
 
-                                        <p className="mt-1 text-xs text-zinc-400">
-                                            {getCreatorName(
-                                                meme.user_id
+
+                                            <p className="mt-1 text-xs text-zinc-500">
+                                                {getProfileName(
+                                                    generation.user_id
+                                                        ? profileMap.get(
+                                                            generation.user_id
+                                                        )
+                                                        : undefined
+                                                )}
+                                            </p>
+
+                                        </div>
+
+
+                                        <p className="shrink-0 text-xs text-zinc-400">
+                                            {formatFullDate(
+                                                generation.created_at
                                             )}
                                         </p>
 
                                     </div>
 
-
-                                    <p className="shrink-0 text-xs text-zinc-400">
-                                        {formatDate(
-                                            meme.created_at
-                                        )}
-                                    </p>
-
-                                </div>
+                                )
                             )
-                        )
-                    ) : (
-                        <p className="py-5 text-sm text-zinc-400">
-                            No recent activity.
-                        </p>
-                    )}
+
+                        )}
+
+                    </div>
 
                 </div>
 
-            </section>
+
+                {/* ALL-TIME SCORE */}
+
+                <div className="mt-5 flex items-center justify-between rounded-2xl border border-zinc-200 bg-white px-6 py-4">
+
+                    <div>
+
+                        <p className="text-xs font-medium text-zinc-700">
+                            All-time community score
+                        </p>
+
+
+                        <p className="mt-1 text-[11px] text-zinc-400">
+                            Funny votes minus Not Funny votes across all history
+                        </p>
+
+                    </div>
+
+
+                    <p className="text-lg font-bold text-black">
+                        {allTimeCommunityScore >= 0
+                            ? "+"
+                            : ""}
+                        {allTimeCommunityScore}
+                    </p>
+
+                </div>
+
+            </div>
 
         </div>
     );
