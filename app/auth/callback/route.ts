@@ -1,5 +1,4 @@
 import {
-    NextRequest,
     NextResponse,
 } from "next/server";
 
@@ -9,8 +8,9 @@ import {
 
 
 export async function GET(
-    request: NextRequest
-) {
+    request: Request
+)
+{
     const requestUrl =
         new URL(
             request.url
@@ -23,9 +23,8 @@ export async function GET(
         );
 
 
-    if (
-        !code
-    ) {
+    if (!code)
+    {
         return NextResponse.redirect(
             new URL(
                 "/login?error=missing_code",
@@ -42,24 +41,22 @@ export async function GET(
     const {
         error,
     } =
-        await supabase.auth
-            .exchangeCodeForSession(
-                code
-            );
+        await supabase.auth.exchangeCodeForSession(
+            code
+        );
 
 
-    if (
-        error
-    ) {
+    if (error)
+    {
         console.error(
-            "Admin OAuth exchange failed:",
+            "OAuth callback error:",
             error
         );
 
 
         return NextResponse.redirect(
             new URL(
-                "/login?error=oauth",
+                "/login?error=oauth_callback",
                 requestUrl.origin
             )
         );
